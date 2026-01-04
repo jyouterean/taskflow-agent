@@ -16,8 +16,12 @@ let _openai: OpenAI | null = null
 
 function getOpenAI(): OpenAI {
   if (!_openai) {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is missing (set it in environment variables)')
+    }
     _openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey,
       organization: process.env.OPENAI_ORG_ID,
     })
   }
