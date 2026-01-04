@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { prisma } from '@/lib/prisma'
+import { PrismaClient } from '@prisma/client'
 import { 
   AgentRunInput, 
   AgentRunResult, 
@@ -18,8 +18,6 @@ function getOpenAI(): OpenAI {
   if (!_openai) {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      // ビルド時には環境変数が設定されていない可能性があるため、
-      // 実行時エラーとして扱う（ビルド時にはこの関数は呼ばれない）
       throw new Error(
         'OPENAI_API_KEY is missing. Please set it in your environment variables or Vercel project settings.'
       )
@@ -32,120 +30,138 @@ function getOpenAI(): OpenAI {
   return _openai
 }
 
+// Lazy-initialized Prisma client
+let _prisma: PrismaClient | null = null
+
+function getPrisma(): PrismaClient {
+  if (!_prisma) {
+    _prisma = new PrismaClient()
+  }
+  return _prisma
+}
+
 // Tool execution handlers
+async function searchProjects(args: any, ctx: { orgId: string; userId: string }) {
+  if (args.org_id !== ctx.orgId) {
+    throw new Error('Organization mismatch - access denied')
+  }
+  
+  const prisma = getPrisma()
+  const projects = await prisma.project.findMany({
+    where: {
+      orgId: args.org_id,
+      name: { contains: args.query, mode: 'insensitive' },
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      status: true,
+    },
+    take: 10,
+  })
+  
+  return projects
+}
+
+async function searchUsers(args: any, ctx: { orgId: string; userId: string }) {
+  if (args.org_id !== ctx.orgId) {
+    throw new Error('Organization mismatch - access denied')
+  }
+  
+  const prisma = getPrisma()
+  const memberships = await prisma.membership.findMany({
+    where: {
+      orgId: args.org_id,
+      deletedAt: null,
+      user: {
+        OR: [
+          { name: { contains: args.query, mode: 'insensitive' } },
+          { email: { contains: args.query, mode: 'insensitive' } },
+        ],
+      },
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+    take: 10,
+  })
+  
+  return memberships.map(m => m.user)
+}
+
+async function createTask(args: any, ctx: { orgId: string; userId: string }) {
+  if (args.org_id !== ctx.orgId) {
+    throw new Error('Organization mismatch - access denied')
+  }
+  
+  return {
+    approval_required: true,
+    action: 'create_task',
+    data: args,
+    message: 'タスク作成には承認が必要です',
+  }
+}
+
+async function updateTask(args: any, ctx: { orgId: string; userId: string }) {
+  const prisma = getPrisma()
+  const task = await prisma.task.findUnique({
+    where: { id: args.task_id },
+    select: { orgId: true },
+  })
+  
+  if (!task || task.orgId !== ctx.orgId) {
+    throw new Error('Task not found or access denied')
+  }
+  
+  return {
+    approval_required: true,
+    action: 'update_task',
+    data: args,
+    message: 'タスク更新には承認が必要です',
+  }
+}
+
+async function createProject(args: any, ctx: { orgId: string; userId: string }) {
+  if (args.org_id !== ctx.orgId) {
+    throw new Error('Organization mismatch - access denied')
+  }
+  
+  return {
+    approval_required: true,
+    action: 'create_project',
+    data: args,
+    message: 'プロジェクト作成には承認が必要です',
+  }
+}
+
+async function logAgentNote(args: any, _ctx: { orgId: string; userId: string }) {
+  return {
+    success: true,
+    note: args.note,
+    task_id: args.task_id,
+  }
+}
+
 const toolHandlers: Record<string, (args: any, ctx: { orgId: string; userId: string }) => Promise<any>> = {
-  async search_projects(args, ctx) {
-    if (args.org_id !== ctx.orgId) {
-      throw new Error('Organization mismatch - access denied')
-    }
-    
-    const projects = await prisma.project.findMany({
-      where: {
-        orgId: args.org_id,
-        name: { contains: args.query, mode: 'insensitive' },
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        status: true,
-      },
-      take: 10,
-    })
-    
-    return projects
-  },
-
-  async search_users(args, ctx) {
-    if (args.org_id !== ctx.orgId) {
-      throw new Error('Organization mismatch - access denied')
-    }
-    
-    const memberships = await prisma.membership.findMany({
-      where: {
-        orgId: args.org_id,
-        deletedAt: null,
-        user: {
-          OR: [
-            { name: { contains: args.query, mode: 'insensitive' } },
-            { email: { contains: args.query, mode: 'insensitive' } },
-          ],
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-      take: 10,
-    })
-    
-    return memberships.map(m => m.user)
-  },
-
-  async create_task(args, ctx) {
-    if (args.org_id !== ctx.orgId) {
-      throw new Error('Organization mismatch - access denied')
-    }
-    
-    // This would require approval in a real implementation
-    return {
-      approval_required: true,
-      action: 'create_task',
-      data: args,
-      message: 'タスク作成には承認が必要です',
-    }
-  },
-
-  async update_task(args, ctx) {
-    const task = await prisma.task.findUnique({
-      where: { id: args.task_id },
-      select: { orgId: true },
-    })
-    
-    if (!task || task.orgId !== ctx.orgId) {
-      throw new Error('Task not found or access denied')
-    }
-    
-    // This would require approval for certain changes
-    return {
-      approval_required: true,
-      action: 'update_task',
-      data: args,
-      message: 'タスク更新には承認が必要です',
-    }
-  },
-
-  async create_project(args, ctx) {
-    if (args.org_id !== ctx.orgId) {
-      throw new Error('Organization mismatch - access denied')
-    }
-    
-    return {
-      approval_required: true,
-      action: 'create_project',
-      data: args,
-      message: 'プロジェクト作成には承認が必要です',
-    }
-  },
-
-  async log_agent_note(args, ctx) {
-    // Agent notes can be created without approval
-    return {
-      success: true,
-      note: args.note,
-      task_id: args.task_id,
-    }
-  },
+  search_projects: searchProjects,
+  search_users: searchUsers,
+  create_task: createTask,
+  update_task: updateTask,
+  create_project: createProject,
+  log_agent_note: logAgentNote,
 }
 
 // Execute agent
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   const { type, input: userInput, orgId, userId, context } = input
+  const prisma = getPrisma()
   
   try {
     // Create agent run record
@@ -177,7 +193,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     // Get output schema based on agent type
     const outputSchema = getOutputSchema(type)
 
-    // Call OpenAI with Responses API pattern
+    // Call OpenAI
     const toolCalls: AgentRunResult['toolCalls'] = []
     const openai = getOpenAI()
     let response = await openai.chat.completions.create({
@@ -281,7 +297,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
       } : undefined,
     }
   } catch (error: any) {
-    console.error('Agent run error:', error)
+    console.error('[Agent Service] error:', error)
 
     return {
       success: false,
@@ -305,4 +321,3 @@ function getOutputSchema(type: AgentRunInput['type']) {
       throw new Error(`Unknown agent type: ${type}`)
   }
 }
-

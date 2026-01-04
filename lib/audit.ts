@@ -1,4 +1,3 @@
-import { prisma } from './prisma'
 import { AuthContext } from './auth'
 
 export interface AuditLogData {
@@ -16,6 +15,8 @@ export interface AuditLogData {
  * Create audit log entry
  */
 export async function createAuditLog(data: AuditLogData): Promise<void> {
+  const { prisma } = await import('./prisma')
+  
   await prisma.auditLog.create({
     data: {
       orgId: data.orgId,
@@ -59,4 +60,3 @@ export async function auditLog(
     userAgent,
   })
 }
-

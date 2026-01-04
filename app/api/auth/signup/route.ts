@@ -1,18 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { hashPassword } from '@/lib/auth-options'
 import { z } from 'zod'
+import { hashPassword } from '@/lib/auth-options'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const SignupSchema = z.object({
-  name: z.string().min(1).max(100),
-  email: z.string().email(),
-  password: z.string().min(8).max(100),
-  orgName: z.string().min(1).max(100),
+  name: z.string().min(1, 'お名前を入力してください').max(100),
+  email: z.string().email('有効なメールアドレスを入力してください'),
+  password: z.string().min(8, 'パスワードは8文字以上で入力してください').max(100),
+  orgName: z.string().min(1, '組織名を入力してください').max(100),
 })
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    // Dynamic import to avoid build-time initialization
+    const { prisma } = await import('@/lib/prisma')
+    
+    const body = await request.json().catch(() => null)
+    if (!body) {
+      return NextResponse.json(
+        { error: 'リクエストボディが不正です' },
+        { status: 400 }
+      )
+    }
+
     const data = SignupSchema.parse(body)
 
     // Check if user already exists
@@ -27,12 +39,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Hash password
+    const passwordHash = await hashPassword(data.password)
+
     // Create organization slug
     const slug = data.orgName
       .toLowerCase()
       .replace(/[^\w\s-]/g, '')
       .replace(/[\s_-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
+      .replace(/^-+|-+$/g, '') || 'org'
 
     // Check if slug is unique, if not add random suffix
     let finalSlug = slug
@@ -53,13 +68,12 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Create user
+      // Create user with hashed password
       const user = await tx.user.create({
         data: {
           name: data.name,
           email: data.email,
-          // In production, store hashed password in a separate table
-          // For demo, we're just creating the user
+          passwordHash: passwordHash,
         },
       })
 
@@ -89,17 +103,17 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error('Signup error:', error)
+    console.error('[/api/auth/signup] error:', error)
 
     if (error.name === 'ZodError') {
       return NextResponse.json(
-        { error: '入力内容が不正です', details: error.errors },
+        { error: error.errors?.[0]?.message || '入力内容が不正です' },
         { status: 400 }
       )
     }
 
     return NextResponse.json(
-      { error: 'サインアップに失敗しました' },
+      { error: 'サインアップに失敗しました。しばらくしてから再度お試しください。' },
       { status: 500 }
     )
   }

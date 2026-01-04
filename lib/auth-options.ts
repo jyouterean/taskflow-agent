@@ -1,7 +1,7 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { prisma } from './prisma'
 import { compare, hash } from 'bcryptjs'
+import { PrismaClient } from '@prisma/client'
 
 // Extend next-auth types
 declare module 'next-auth' {
@@ -30,6 +30,25 @@ declare module 'next-auth/jwt' {
   }
 }
 
+// Helper to hash passwords
+export async function hashPassword(password: string): Promise<string> {
+  return hash(password, 12)
+}
+
+// Helper to verify passwords
+export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
+  return compare(password, hashedPassword)
+}
+
+// Lazy-initialized Prisma client for auth
+let _prisma: PrismaClient | null = null
+function getAuthPrisma(): PrismaClient {
+  if (!_prisma) {
+    _prisma = new PrismaClient()
+  }
+  return _prisma
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -43,22 +62,29 @@ export const authOptions: NextAuthOptions = {
           throw new Error('メールアドレスとパスワードを入力してください')
         }
 
-        // For demo purposes, we'll use a simplified auth
-        // In production, you'd have a separate password table
+        const prisma = getAuthPrisma()
+        
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
         })
 
         if (!user) {
-          throw new Error('ユーザーが見つかりません')
+          throw new Error('メールアドレスまたはパスワードが正しくありません')
         }
 
         if (user.deletedAt) {
           throw new Error('このアカウントは無効化されています')
         }
 
-        // In a real app, verify password hash here
-        // For demo, we'll accept any password for existing users
+        // Verify password
+        if (!user.passwordHash) {
+          throw new Error('パスワードが設定されていません。管理者にお問い合わせください')
+        }
+
+        const isValid = await verifyPassword(credentials.password, user.passwordHash)
+        if (!isValid) {
+          throw new Error('メールアドレスまたはパスワードが正しくありません')
+        }
         
         return {
           id: user.id,
@@ -80,7 +106,7 @@ export const authOptions: NextAuthOptions = {
     signIn: '/login',
     signOut: '/logout',
     error: '/login',
-    newUser: '/onboarding',
+    newUser: '/app/dashboard',
   },
   callbacks: {
     async jwt({ token, user }) {
@@ -106,24 +132,12 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async signIn({ user }) {
-      // Log sign in event
       console.log(`User signed in: ${user.email}`)
     },
     async signOut({ token }) {
-      // Log sign out event
       console.log(`User signed out: ${token?.email}`)
     },
   },
   debug: process.env.NODE_ENV === 'development',
-}
-
-// Helper to hash passwords
-export async function hashPassword(password: string): Promise<string> {
-  return hash(password, 12)
-}
-
-// Helper to verify passwords
-export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-  return compare(password, hashedPassword)
 }
 

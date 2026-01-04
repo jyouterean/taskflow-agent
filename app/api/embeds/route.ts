@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
-import { prisma } from '@/lib/prisma'
-import { auditLog } from '@/lib/audit'
 import { z } from 'zod'
 import { randomBytes } from 'crypto'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const CreateEmbedSchema = z.object({
   name: z.string().min(1).max(100),
@@ -24,6 +25,8 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const { prisma } = await import('@/lib/prisma')
 
     const membership = await prisma.membership.findFirst({
       where: {
@@ -56,7 +59,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(embeds)
   } catch (error) {
-    console.error('Embeds API error:', error)
+    console.error('[/api/embeds] GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
@@ -68,6 +71,9 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const { prisma } = await import('@/lib/prisma')
+    const { auditLog } = await import('@/lib/audit')
 
     const membership = await prisma.membership.findFirst({
       where: {
@@ -85,7 +91,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 })
     }
 
-    const body = await request.json()
+    const body = await request.json().catch(() => null)
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+
     const data = CreateEmbedSchema.parse(body)
 
     // Check if OPERATIONS_ALLOWED requires Admin
@@ -141,7 +151,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(embed, { status: 201 })
   } catch (error: any) {
-    console.error('Embeds API error:', error)
+    console.error('[/api/embeds] POST error:', error)
 
     if (error.name === 'ZodError') {
       return NextResponse.json({ error: 'Invalid request', details: error.errors }, { status: 400 })
@@ -150,4 +160,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-

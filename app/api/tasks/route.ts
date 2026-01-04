@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
-import { prisma } from '@/lib/prisma'
-import { auditLog } from '@/lib/audit'
 import { z } from 'zod'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const CreateTaskSchema = z.object({
   title: z.string().min(1).max(200),
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const { prisma } = await import('@/lib/prisma')
 
     const membership = await prisma.membership.findFirst({
       where: {
@@ -81,7 +84,7 @@ export async function GET(request: NextRequest) {
       offset,
     })
   } catch (error) {
-    console.error('Tasks API error:', error)
+    console.error('[/api/tasks] GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
@@ -94,6 +97,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { prisma } = await import('@/lib/prisma')
+    const { auditLog } = await import('@/lib/audit')
+
     const membership = await prisma.membership.findFirst({
       where: {
         userId: session.user.id,
@@ -105,7 +111,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No organization found' }, { status: 404 })
     }
 
-    const body = await request.json()
+    const body = await request.json().catch(() => null)
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+
     const data = CreateTaskSchema.parse(body)
 
     // Verify project belongs to org
@@ -165,7 +175,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(task, { status: 201 })
   } catch (error: any) {
-    console.error('Tasks API error:', error)
+    console.error('[/api/tasks] POST error:', error)
     
     if (error.name === 'ZodError') {
       return NextResponse.json({ error: 'Invalid request', details: error.errors }, { status: 400 })
@@ -174,4 +184,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-
