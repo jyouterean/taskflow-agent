@@ -104,7 +104,15 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('[/api/auth/signup] error:', error)
+    console.error('Error details:', {
+      name: error?.name,
+      message: error?.message,
+      code: error?.code,
+      meta: error?.meta,
+      stack: error?.stack,
+    })
 
+    // Zod validation error
     if (error.name === 'ZodError') {
       return NextResponse.json(
         { error: error.errors?.[0]?.message || '入力内容が不正です' },
@@ -112,8 +120,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Prisma errors
+    if (error.code === 'P2002') {
+      // Unique constraint violation
+      const field = error.meta?.target?.[0] || 'フィールド'
+      return NextResponse.json(
+        { error: `${field}が既に使用されています` },
+        { status: 400 }
+      )
+    }
+
+    if (error.code === 'P1001') {
+      // Can't reach database server
+      return NextResponse.json(
+        { error: 'データベースに接続できません。設定を確認してください。' },
+        { status: 503 }
+      )
+    }
+
+    if (error.code === 'P1017') {
+      // Server has closed the connection
+      return NextResponse.json(
+        { error: 'データベース接続が切断されました。再度お試しください。' },
+        { status: 503 }
+      )
+    }
+
+    // Database connection errors
+    if (error.message?.includes('DATABASE_URL') || error.message?.includes('connection')) {
+      return NextResponse.json(
+        { error: 'データベース接続エラーが発生しました。管理者にお問い合わせください。' },
+        { status: 503 }
+      )
+    }
+
+    // Return more specific error in development
+    const errorMessage = process.env.NODE_ENV === 'development'
+      ? error.message || 'サインアップに失敗しました'
+      : 'サインアップに失敗しました。しばらくしてから再度お試しください。'
+
     return NextResponse.json(
-      { error: 'サインアップに失敗しました。しばらくしてから再度お試しください。' },
+      { error: errorMessage },
       { status: 500 }
     )
   }
