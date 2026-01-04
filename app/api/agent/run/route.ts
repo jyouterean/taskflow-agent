@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
-import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
@@ -23,7 +22,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's organization
+    // Get user's organization (dynamic import to avoid build-time initialization)
+    const { prisma } = await import('@/lib/prisma')
     const membership = await prisma.membership.findFirst({
       where: {
         userId: session.user.id,
