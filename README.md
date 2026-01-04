@@ -34,7 +34,7 @@
 - **Styling**: Tailwind CSS, Framer Motion
 - **UI Components**: Radix UI
 - **Backend**: Next.js API Routes
-- **Database**: PostgreSQL + Prisma ORM
+- **Database**: Neon (PostgreSQL) + Prisma ORM
 - **Authentication**: NextAuth.js
 - **AI**: OpenAI API (GPT-4o, Function Calling, Structured Outputs)
 
@@ -46,17 +46,32 @@
 npm install
 ```
 
-### 2. 環境変数の設定
+### 2. Neonデータベースのセットアップ
 
-`.env` ファイルを作成し、以下の変数を設定:
+このプロジェクトは [Neon](https://neon.tech) を使用してPostgreSQLデータベースをホストします。
+
+#### Neonアカウントの作成とデータベース設定
+
+1. [Neon Console](https://console.neon.tech) にアクセスしてアカウントを作成
+2. 新しいプロジェクトを作成（例: `taskflow-agent`）
+3. 接続文字列をコピー（Connection Detailsから取得）
+   - 形式: `postgresql://[user]:[password]@[host]/[database]?sslmode=require`
+
+詳細は [docs/NEON_SETUP.md](./docs/NEON_SETUP.md) を参照してください。
+
+### 3. 環境変数の設定
+
+プロジェクトルートに `.env` ファイルを作成:
 
 ```env
-# Database
-DATABASE_URL="postgresql://user:password@localhost:5432/taskflow_agent"
+# Database (Neon PostgreSQL)
+# Neon Consoleから取得した接続文字列を貼り付け
+DATABASE_URL="postgresql://user:password@ep-xxxxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
 # NextAuth
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="your-nextauth-secret-key-here"
+# シークレット生成: openssl rand -base64 32
 
 # OpenAI
 OPENAI_API_KEY="sk-your-openai-api-key"
@@ -66,21 +81,40 @@ OPENAI_ORG_ID="org-your-org-id"
 APP_URL="http://localhost:3000"
 ```
 
-### 3. データベースのセットアップ
+### 4. データベースのセットアップ
 
 ```bash
 # Prismaクライアント生成
 npm run db:generate
 
-# データベースマイグレーション
+# データベースにスキーマを適用（Neonに接続）
 npm run db:push
 ```
 
-### 4. 開発サーバーの起動
+または、マイグレーションを使用する場合:
+
+```bash
+npm run db:migrate
+# マイグレーション名を入力（例: init）
+```
+
+### 5. 開発サーバーの起動
 
 ```bash
 npm run dev
 ```
+
+ブラウザで [http://localhost:3000](http://localhost:3000) を開きます。
+
+### 6. データベースの確認（オプション）
+
+Prisma Studioでデータベースの内容を確認:
+
+```bash
+npm run db:studio
+```
+
+ブラウザで `http://localhost:5555` が開きます。
 
 ## 📁 プロジェクト構造
 
