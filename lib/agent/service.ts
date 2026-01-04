@@ -18,7 +18,11 @@ function getOpenAI(): OpenAI {
   if (!_openai) {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is missing (set it in environment variables)')
+      // ビルド時には環境変数が設定されていない可能性があるため、
+      // 実行時エラーとして扱う（ビルド時にはこの関数は呼ばれない）
+      throw new Error(
+        'OPENAI_API_KEY is missing. Please set it in your environment variables or Vercel project settings.'
+      )
     }
     _openai = new OpenAI({
       apiKey,

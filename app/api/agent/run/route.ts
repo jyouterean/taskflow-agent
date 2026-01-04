@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
-import { runAgent } from '@/lib/agent/service'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
@@ -48,7 +47,8 @@ export async function POST(request: NextRequest) {
 
     const { type, input, projectId } = RequestSchema.parse(body)
 
-    // Run agent
+    // Run agent (dynamic import to avoid build-time initialization)
+    const { runAgent } = await import('@/lib/agent/service')
     const result = await runAgent({
       type,
       input,
